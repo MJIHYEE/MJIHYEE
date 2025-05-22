@@ -1,0 +1,158 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>대여 신청 관리</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    h1 { margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: middle; }
+    button { margin: 0 5px; padding: 5px 10px; cursor: pointer; }
+    button:disabled { background-color: #ccc; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>대여 신청 관리</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>소속</th>
+        <th>학번</th>
+        <th>대표자 이름</th>
+        <th>대표자 연락처</th>
+        <th>대리인 이름</th>
+        <th>대리인 연락처</th>
+        <th>사용 장소</th>
+        <th>대여 물품 및 수량</th>
+        <th>대여 일자</th>
+        <th>반납 일자</th>
+        <th>대여 사유</th>
+        <th>비고</th>
+        <th>첨부 파일</th>
+        <th>조치</th>
+      </tr>
+    </thead>
+    <tbody id="requestsBody"></tbody>
+  </table>
+
+<script>
+  const tbody = document.getElementById('requestsBody');
+  let requests = [];
+
+  function formatItems(items) {
+    if (!items) return '';
+    if (typeof items === 'string') return items.replace(/\n/g, '<br>');
+    if (Array.isArray(items)) return items.join(', ');
+    return '';
+  }
+
+  function fetchRequests() {
+    fetch('http://localhost:3000/api/rental')
+      .then(res => res.json())
+      .then(data => {
+        requests = Array.isArray(data) ? data : (data.submissions || []);
+        render();
+      })
+      .catch(() => {
+        tbody.innerHTML = '<tr><td colspan="14">서버와 통신 실패</td></tr>';
+      });
+  }
+
+  function render() {
+    tbody.innerHTML = '';
+
+    if (requests.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="14">등록된 대여 신청이 없습니다.</td></tr>';
+      return;
+    }
+
+    requests.forEach((req, idx) => {
+      const isApproved = req.status === '승인됨';
+      const isCancelled = req.status === '취소됨';
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${req.department || ''}</td>
+        <td>${req.grade || ''}</td>
+        <td>${req.repName || ''}</td>
+        <td>${req.repPhone || ''}</td>
+        <td>${req.agentName || ''}</td>
+        <td>${req.agentPhone || ''}</td>
+        <td>${req.place || ''}</td>
+        <td>${formatItems(req.items)}</td>
+        <td>${req.rentalDate || ''}</td>
+        <td>${req.returnDate || ''}</td>
+        <td>${req.reason || ''}</td>
+        <td>${req.note || ''}</td>
+        <td>${req.fileName ? `<a href="${req.fileData || '#'}" target="_blank" download="${req.fileName}">${req.fileName}</a>` : ''}</td>
+        <td>
+          <button onclick="approve(${idx})" ${isApproved || isCancelled ? 'disabled' : ''}>승인</button>
+          <button onclick="cancel(${idx})" ${isCancelled ? 'disabled' : ''}>취소</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // 승인 처리
+  function approve(idx) {
+    const id = requests[idx].id;
+    if (!id) {
+      alert('해당 신청의 ID가 없습니다.');
+      return;
+    }
+    fetch('http://localhost:3000/api/rental/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, status: '승인됨' })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error('네트워크 응답 실패');
+      return res.json();
+    })
+    .then(data => {
+      if (data.success) {
+        alert('승인 완료되었습니다.');
+        fetchRequests();
+      } else {
+        alert('승인 실패했습니다: ' + (data.message || ''));
+      }
+    })
+    .catch(e => alert('서버 오류가 발생했습니다.\n' + e.message));
+  }
+
+  // 취소 처리 (삭제)
+  function cancel(idx) {
+    if (!confirm('정말 취소하시겠습니까?')) return;
+    const id = requests[idx].id;
+    if (!id) {
+      alert('해당 신청의 ID가 없습니다.');
+      return;
+    }
+    fetch('http://localhost:3000/api/rental/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error('네트워크 응답 실패');
+      return res.json();
+    })
+    .then(data => {
+      if (data.success) {
+        alert('취소(삭제) 완료되었습니다.');
+        fetchRequests();
+      } else {
+        alert('취소 실패했습니다: ' + (data.message || ''));
+      }
+    })
+    .catch(e => alert('서버 오류가 발생했습니다.\n' + e.message));
+  }
+
+  window.onload = fetchRequests;
+</script>
+
+</body>
+</html>
