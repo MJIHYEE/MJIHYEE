@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>내 정보</title>
+  <style>
+    body{font-family:'Segoe UI';background:#f3f0ff;padding:30px;}
+    .info-box{background:#fff;border-radius:10px;padding:20px;max-width:600px;margin:auto;box-shadow:0 3px 8px rgba(0,0,0,.1);}
+    h2{text-align:center;color:#4a54e1;}
+    .record{border:1px solid #ddd;padding:15px;margin-top:15px;border-radius:8px;background:#fafaff;}
+    .record p{margin:5px 0;}
+    .delete-btn{background:#f45c5c;color:#fff;padding:6px 12px;border:none;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;}
+    .delete-btn:disabled {background-color: #ccc; cursor: not-allowed;}
+    .status {font-weight:bold;padding:4px 8px;border-radius:5px;display:inline-block;margin-left:8px;}
+    .대기 {background:#f0ad4e; color:white;}
+    .승인됨 {background:#5cb85c; color:white;}
+    .거절됨, .취소됨 {background:#d9534f; color:white;}
+  </style>
+</head>
+<body>
+  <div class="info-box">
+    <h2>📦 내 물품 대여 내역</h2>
+    <div id="record-container"></div>
+  </div>
+
+  <script>
+    async function fetchMyRequests() {
+      try {
+        const res = await fetch('http://localhost:3000/api/rental');
+        const data = await res.json();
+        return Array.isArray(data) ? data : data.submissions || [];
+      } catch (e) {
+        console.error('데이터 불러오기 실패', e);
+        return [];
+      }
+    }
+
+    async function renderRecords() {
+      const repName = localStorage.getItem('myRepName');
+      const recordEl = document.getElementById('record-container');
+      if (!repName) {
+        recordEl.innerHTML = '<p>대표자 이름이 설정되지 않았습니다.</p>';
+        return;
+      }
+
+      const all = await fetchMyRequests();
+      const list = all.filter(r => r.repName === repName);
+      recordEl.innerHTML = '';
+
+      if (!list.length) {
+        recordEl.innerHTML = '<p>신청 내역이 없습니다.</p>';
+        return;
+      }
+
+      list.forEach((req, i) => {
+        const div = document.createElement('div');
+        div.className = 'record';
+
+        const fileHTML = (req.fileName && req.fileData)
+          ? `<p><strong>첨부 파일:</strong> <a href="${req.fileData}" download="${req.fileName}">${req.fileName}</a></p>`
+          : '';
+
+        const statusText = req.status || '대기';
+        const statusClass = statusText;
+
+        const disabledAttr = (statusText === '승인됨') ? 'disabled' : '';
+
+        div.innerHTML = `
+          <p><strong>소속:</strong> ${req.department}</p>
+          <p><strong>학번:</strong> ${req.grade}</p>
+          <p><strong>대표자 이름:</strong> ${req.repName}</p>
+          <p><strong>대표자 연락처:</strong> ${req.repPhone}</p>
+          <p><strong>대리인 이름:</strong> ${req.agentName || '-'}</p>
+          <p><strong>대리인 연락처:</strong> ${req.agentPhone || '-'}</p>
+          <p><strong>사용 장소:</strong> ${req.place}</p>
+          <p><strong>대여 물품 및 수량:</strong> ${req.items.replace(/\n/g, '<br>')}</p>
+          <p><strong>대여일자:</strong> ${req.rentalDate}</p>
+          <p><strong>반납일자:</strong> ${req.returnDate}</p>
+          <p><strong>대여 사유:</strong> ${req.reason || '-'}</p>
+          <p><strong>비고:</strong> ${req.note || '-'}</p>
+          ${fileHTML}
+          <p><strong>신청 상태:</strong> <span class="status ${statusClass}">${statusText}</span></p>
+          <button class="delete-btn" data-id="${req.id}" ${disabledAttr}>신청 취소</button>
+        `;
+        recordEl.appendChild(div);
+      });
+
+      // 이벤트 위임 방식: 취소 버튼 처리
+      recordEl.addEventListener('click', async e => {
+        if (!e.target.classList.contains('delete-btn')) return;
+        const id = e.target.dataset.id;
+        if (!id) return;
+
+        if (!confirm('정말 신청을 취소하시겠습니까?')) return;
+
+        try {
+          const res = await fetch('http://localhost:3000/api/rental/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, status: '취소됨' })
+          });
+
+          const data = await res.json();
+          if (data.success) {
+            alert('신청이 취소되었습니다.');
+            renderRecords(); // 최신 상태 다시 반영
+          } else {
+            alert('취소 실패: ' + (data.message || ''));
+          }
+        } catch (err) {
+          alert('서버 오류가 발생했습니다.');
+        }
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', renderRecords);
+
+    // 다른 탭에서 변경 시 자동 반영
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'myRequests') {
+        renderRecords();
+      }
+    });
+
+    // 주기적으로 서버 상태 최신화 (선택 사항)
+    setInterval(renderRecords, 10000); // 10초마다 갱신
+  </script>
+</body>
+</html>
